@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ky">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мектеп директорунун панели / Панель директора</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="admin-container">
+    
+    <div class="admin-top-bar">
+      <div class="lang-switch">
+        <button class="lang-btn active" onclick="switchAdminLang('ky')">Кыргызча</button>
+        <button class="lang-btn" onclick="switchAdminLang('ru')">Русский</button>
+      </div>
+      <div>
+        <button class="btn-clear" onclick="clearData()" id="btn-clear">Тазалоо</button>
+        <button class="btn-print" onclick="window.print()" id="btn-print">Отчётту басып чыгаруу</button>
+      </div>
+    </div>
+
+    <header class="admin-header">
+      <div>
+        <h1 id="admin-title">Мугалимдердин келинүү графиги (Апталык)</h1>
+        <p id="admin-subtitle">Сабактын башталышы: 08:00. Кечигүүлөр автоматтык түрдө эсептелет.</p>
+      </div>
+    </header>
+
+    <div class="card table-card">
+      <div class="table-responsive">
+        <table class="weekly-table">
+          <thead>
+            <tr>
+              <th>№</th>
+              <th id="th-name">Мугалимдин аты-жөнү</th>
+              <th id="th-sub">Сабагы</th>
+              <th id="d1">Дүйшөмбү</th>
+              <th id="d2">Шейшемби</th>
+              <th id="d3">Шаршемби</th>
+              <th id="d4">Бейшемби</th>
+              <th id="d5">Жума</th>
+              <th id="d6">Ишемби</th>
+            </tr>
+          </thead>
+          <tbody id="attendance-body">
+            <!-- Ma'lumotlar avtomatik tushadi -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let adminLang = 'ky';
+
+    function loadAttendanceData() {
+      const records = JSON.parse(localStorage.getItem('school_attendance') || '[]');
+      const tbody = document.getElementById('attendance-body');
+      tbody.innerHTML = '';
+
+      if (records.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a0aec0; padding:20px;">${adminLang === 'ky' ? 'Азырынча каттоодон өткөн мугалимдер жок' : 'Пока нет зарегистрированных учителей'}</td></tr>`;
+        return;
+      }
+
+      // O'qituvchilarni ism-familiyasi bo'yicha guruhlash
+      const teachers = {};
+      records.forEach(rec => {
+        const key = `${rec.fullname}_${rec.subject}`;
+        if (!teachers[key]) {
+          teachers[key] = { fullname: rec.fullname, subject: rec.subject, days: {} };
+        }
+        teachers[key].days[rec.dayIndex] = rec;
+      });
+
+      let index = 1;
+      for (const key in teachers) {
+        const t = teachers[key];
+        let rowHtml = `<tr>
+          <td>${index++}</td>
+          <td><b>${t.fullname}</b></td>
+          <td>${t.subject}</td>`;
+
+        // Dushanbadan Shanbagacha (1 - 6)
+        for (let day = 1; day <= 6; day++) {
+          const rec = t.days[day];
+          if (rec) {
+            // Kechikishni hisoblash (08:00)
+            const targetTime = 8 * 60; // 08:00 -> 480 daqiqa
+            const actualTime = rec.hours * 60 + rec.minutes;
+            const diffMinutes = actualTime - targetTime;
+
+            if (diffMinutes > 0) {
+              const lateText = adminLang === 'ky' ? `Кечикти: ${diffMinutes} дак` : `Опоздал: ${diffMinutes} мин`;
+              rowHtml += `<td><span class="badge badge-danger">${lateText} (${rec.time})</span></td>`;
+            } else {
+              rowHtml += `<td><span class="badge badge-success">${rec.time}</span></td>`;
+            }
+          } else {
+            rowHtml += `<td><span class="badge badge-empty">-</span></td>`;
+          }
+        }
+
+        rowHtml += `</tr>`;
+        tbody.innerHTML += rowHtml;
+      }
+    }
+
+    function clearData() {
+      if (confirm(adminLang === 'ky' ? "Бардык маалыматтарды өчүрүүнү каалайсызбы?" : "Удалить все данные?")) {
+        localStorage.removeItem('school_attendance');
+        loadAttendanceData();
+      }
+    }
+
+    function switchAdminLang(lang) {
+      adminLang = lang;
+      document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+      if (lang === 'ky') {
+        document.querySelectorAll('.lang-btn')[0].classList.add('active');
+        document.getElementById('admin-title').innerText = "Мугалимдердин келинүү графиги (Апталык)";
+        document.getElementById('admin-subtitle').innerText = "Сабактын башталышы: 08:00. Кечигүүлөр автоматтык түрдө эсептелет.";
+        document.getElementById('btn-print').innerText = "Отчётту басып чыгаруу";
+        document.getElementById('btn-clear').innerText = "Тазалоо";
+        document.getElementById('th-name').innerText = "Мугалимдин аты-жөнү";
+        document.getElementById('th-sub').innerText = "Сабагы";
+        document.getElementById('d1').innerText = "Дүйшөмбү";
+        document.getElementById('d2').innerText = "Шейшемби";
+        document.getElementById('d3').innerText = "Шаршемби";
+        document.getElementById('d4').innerText = "Бейшемби";
+        document.getElementById('d5').innerText = "Жума";
+        document.getElementById('d6').innerText = "Ишемби";
+      } else {
+        document.querySelectorAll('.lang-btn')[1].classList.add('active');
+        document.getElementById('admin-title').innerText = "График посещаемости учителей (Еженедельный)";
+        document.getElementById('admin-subtitle').innerText = "Начало занятий: 08:00. Опоздания рассчитываются автоматически.";
+        document.getElementById('btn-print').innerText = "Распечатать отчёт";
+        document.getElementById('btn-clear').innerText = "Очистить";
+        document.getElementById('th-name').innerText = "ФИО Учителя";
+        document.getElementById('th-sub').innerText = "Предмет";
+        document.getElementById('d1').innerText = "Понедельник";
+        document.getElementById('d2').innerText = "Вторник";
+        document.getElementById('d3').innerText = "Среда";
+        document.getElementById('d4').innerText = "Четверг";
+        document.getElementById('d5').innerText = "Пятница";
+        document.getElementById('d6').innerText = "Суббота";
+      }
+      loadAttendanceData();
+    }
+
+    // Sahifa yuklanganda va har 3 soniyada avtomatik yangilash
+    window.onload = loadAttendanceData;
+    setInterval(loadAttendanceData, 3000);
+  </script>
+</body>
+</html>

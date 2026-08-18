@@ -1,0 +1,224 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  background-color: #f0f3f8;
+  color: #1a202c;
+  padding: 20px;
+}
+
+.container {
+  max-width: 480px;
+  margin: 20px auto;
+}
+
+.admin-container {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+}
+
+.lang-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.lang-btn {
+  background: #e2e8f0;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lang-btn.active {
+  background: #3182ce;
+  color: #ffffff;
+}
+
+.header h2 {
+  font-size: 20px;
+  color: #2b6cb0;
+  margin-bottom: 6px;
+}
+
+.header p {
+  font-size: 13px;
+  color: #718096;
+  margin-bottom: 20px;
+}
+
+.time-info {
+  display: flex;
+  justify-content: space-between;
+  background-color: #ebf8ff;
+  color: #2b6cb0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  font-size: 15px;
+  outline: none;
+}
+
+.form-group input:focus {
+  border-color: #3182ce;
+  box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.15);
+}
+
+.btn-submit {
+  width: 100%;
+  background-color: #3182ce;
+  color: white;
+  border: none;
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Kök Galochka */
+.success-screen {
+  text-align: center;
+  padding: 20px 10px;
+}
+
+.blue-checkmark {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 16px;
+}
+
+.checkmark-circle {
+  stroke: #3182ce;
+  stroke-width: 2;
+  stroke-dasharray: 166;
+  stroke-dashoffset: 166;
+  animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+}
+
+.checkmark-check {
+  transform-origin: 50% 50%;
+  stroke: #3182ce;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.6s forwards;
+}
+
+@keyframes stroke {
+  100% { stroke-dashoffset: 0; }
+}
+
+.confirm-time-box {
+  display: inline-block;
+  margin-top: 16px;
+  padding: 8px 16px;
+  background-color: #ebf8ff;
+  color: #2b6cb0;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+/* Admin Panel */
+.admin-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.admin-header {
+  margin-bottom: 24px;
+}
+
+.btn-print {
+  background-color: #38a169;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-clear {
+  background-color: #e53e3e;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.weekly-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: center;
+}
+
+.weekly-table th, .weekly-table td {
+  padding: 12px 8px;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+}
+
+.weekly-table th {
+  background-color: #f7fafc;
+  color: #4a5568;
+}
+
+.weekly-table td:nth-child(2),
+.weekly-table td:nth-child(3) {
+  text-align: left;
+}
+
+.badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.badge-success { background-color: #c6f6d5; color: #22543d; }
+.badge-danger { background-color: #fed7d7; color: #9b2c2c; }
+.badge-empty { color: #cbd5e0; }

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ky">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mugalimderdi kattoo / Регистрация учителей</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="container">
+    <div class="card form-card">
+      
+      <!-- Tildi tandoo -->
+      <div class="lang-switch">
+        <button class="lang-btn active" onclick="switchLang('ky')">Кыргызча</button>
+        <button class="lang-btn" onclick="switchLang('ru')">Русский</button>
+      </div>
+
+      <div class="header">
+        <h2 id="form-title">Мектепке келүүнү каттоо</h2>
+        <p id="form-desc">Аты-жөнүңүздү жана сабагыңызды жазып жөнөтүңүз</p>
+      </div>
+
+      <form id="attendance-form" onsubmit="handleFormSubmit(event)">
+        <div class="time-info">
+          <span id="current-date">Күнү: --.--.----</span>
+          <span id="current-time">Убактысы: --:--</span>
+        </div>
+
+        <div class="form-group">
+          <label for="fullname" id="lbl-fullname">Аты-жөнүңүз (ФИО):</label>
+          <input type="text" id="fullname" placeholder="Мисалы: Асанов Улан Маратович" required>
+        </div>
+
+        <div class="form-group">
+          <label for="subject" id="lbl-subject">Окуткан сабагыңыз (Фан):</label>
+          <input type="text" id="subject" placeholder="Мисалы: Информатика" required>
+        </div>
+
+        <button type="submit" class="btn-submit" id="btn-send">Каттоону жөнөтүү</button>
+      </form>
+
+      <!-- Kök galochka jana tasdyktoo -->
+      <div class="success-screen" id="success-screen" style="display: none;">
+        <div class="blue-checkmark">
+          <svg viewBox="0 0 52 52">
+            <circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
+            <path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+          </svg>
+        </div>
+        <h3 id="succ-title">Сиз ийгиликтүү катталдыңыз!</h3>
+        <p id="succ-desc">Маалыматыңыз директордун панелине жөнөтүлдү.</p>
+        <div class="confirm-time-box">
+          <span id="registered-datetime">--.--.---- — --:--</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let currentLang = 'ky';
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('current-date').innerText = `${currentLang === 'ky' ? 'Күнү' : 'Дата'}: ${now.toLocaleDateString('ru-RU')}`;
+      document.getElementById('current-time').innerText = `${currentLang === 'ky' ? 'Убактысы' : 'Время'}: ${now.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'})}`;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    function handleFormSubmit(e) {
+      e.preventDefault();
+      
+      const fullname = document.getElementById('fullname').value.trim();
+      const subject = document.getElementById('subject').value.trim();
+      const now = new Date();
+      
+      const timeStr = now.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'});
+      const dateStr = now.toLocaleDateString('ru-RU');
+      const dayIndex = now.getDay(); // 1 = Düyşönbü, 2 = Şeyşembı...
+
+      const newRecord = {
+        fullname: fullname,
+        subject: subject,
+        time: timeStr,
+        date: dateStr,
+        dayIndex: dayIndex,
+        hours: now.getHours(),
+        minutes: now.getMinutes()
+      };
+
+      // LocalStorage-ga saqlash (Baza vazifasini bajaradi)
+      let records = JSON.parse(localStorage.getItem('school_attendance') || '[]');
+      records.push(newRecord);
+      localStorage.setItem('school_attendance', JSON.stringify(records));
+
+      document.getElementById('attendance-form').style.display = 'none';
+      document.getElementById('registered-datetime').innerText = `${dateStr} — ${timeStr}`;
+      document.getElementById('success-screen').style.display = 'block';
+    }
+
+    function switchLang(lang) {
+      currentLang = lang;
+      document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+      if (lang === 'ky') {
+        document.querySelectorAll('.lang-btn')[0].classList.add('active');
+        document.getElementById('form-title').innerText = "Мектепке келүүнү каттоо";
+        document.getElementById('form-desc').innerText = "Аты-жөнүңүздү жана сабагыңызды жазып жөнөтүңүз";
+        document.getElementById('lbl-fullname').innerText = "Аты-жөнүңүз (ФИО):";
+        document.getElementById('fullname').placeholder = "Мисалы: Асанов Улан Маратович";
+        document.getElementById('lbl-subject').innerText = "Окуткан сабагыңыз (Фан):";
+        document.getElementById('subject').placeholder = "Мисалы: Информатика";
+        document.getElementById('btn-send').innerText = "Каттоону жөнөтүү";
+        document.getElementById('succ-title').innerText = "Сиз ийгиликтүү катталдыңыз!";
+        document.getElementById('succ-desc').innerText = "Маалыматыңыз директордун панелине жөнөтүлдү.";
+      } else {
+        document.querySelectorAll('.lang-btn')[1].classList.add('active');
+        document.getElementById('form-title').innerText = "Регистрация прихода в школу";
+        document.getElementById('form-desc').innerText = "Введите ваше ФИО и преподаваемый предмет";
+        document.getElementById('lbl-fullname').innerText = "Ваше ФИО:";
+        document.getElementById('fullname').placeholder = "Например: Асанов Улан Маратович";
+        document.getElementById('lbl-subject').innerText = "Преподаваемый предмет:";
+        document.getElementById('subject').placeholder = "Например: Информатика";
+        document.getElementById('btn-send').innerText = "Отправить регистрацию";
+        document.getElementById('succ-title').innerText = "Вы успешно зарегистрированы!";
+        document.getElementById('succ-desc').innerText = "Ваши данные отправлены в панель директора.";
+      }
+      updateClock();
+    }
+  </script>
+</body>
+</html>

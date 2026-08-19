@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mugalimderdi kattoo / Регистрация учителей</title>
   <link rel="stylesheet" href="style.css">
+  <!-- Firebase SDK: barcha qurilmalarda (telefon, planshet, iPad, noutbuk) umumiy bulutli bazaga ulanish uchun -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
 </head>
 <body>
 
@@ -20,6 +24,10 @@
       <div class="header">
         <h2 id="form-title">Мектепке келүүнү каттоо</h2>
         <p id="form-desc">Аты-жөнүңүздү жана сабагыңызды жазып жөнөтүңүз</p>
+      </div>
+
+      <div id="config-warning" style="display:none; background:#fed7d7; color:#822727; padding:12px 14px; border-radius:8px; margin-bottom:14px; font-size:0.85rem; line-height:1.4;">
+        ⚠️ Firebase sozlanmagan! Ma'lumotlar hozircha faqat shu qurilmada saqlanadi va boshqa qurilmalarga (adminga) tushmaydi. <b>firebase-config.js</b> faylini to'ldiring — batafsili README.txt faylida.
       </div>
 
       <form id="attendance-form" onsubmit="handleFormSubmit(event)">
@@ -70,13 +78,33 @@
     setInterval(updateClock, 1000);
     updateClock();
 
+    // Qurilma turini aniqlash — adminga qaysi qurilmadan kelganini ko'rsatish uchun
+    function detectDeviceType() {
+      const ua = navigator.userAgent || navigator.vendor || window.opera;
+      const isIPadOS = ua.includes('Macintosh') && navigator.maxTouchPoints && navigator.maxTouchPoints > 1;
+
+      if (/iPhone/i.test(ua)) return "iPhone";
+      if (/iPad/i.test(ua) || isIPadOS) return "iPad";
+      if (/Android/i.test(ua)) return /Mobile/i.test(ua) ? "Android telefon" : "Android planshet";
+      if (/Windows Phone/i.test(ua)) return "Windows Phone";
+      if (/Tablet|PlayBook|Silk/i.test(ua)) return "Planshet";
+      return "Kompyuter/Noutbuk";
+    }
+
+    // Firebase sozlanmaganini foydalanuvchiga ko'rsatish
+    window.addEventListener('DOMContentLoaded', () => {
+      if (!isFirebaseConfigured()) {
+        document.getElementById('config-warning').style.display = 'block';
+      }
+    });
+
     function handleFormSubmit(e) {
       e.preventDefault();
-      
+
       const fullname = document.getElementById('fullname').value.trim();
       const subject = document.getElementById('subject').value.trim();
       const now = new Date();
-      
+
       const timeStr = now.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'});
       const dateStr = now.toLocaleDateString('ru-RU');
       const dayIndex = now.getDay(); // 1 = Düyşönbü, 2 = Şeyşembı...
@@ -88,17 +116,48 @@
         date: dateStr,
         dayIndex: dayIndex,
         hours: now.getHours(),
-        minutes: now.getMinutes()
+        minutes: now.getMinutes(),
+        device: detectDeviceType(),
+        timestamp: now.getTime()
       };
 
-      // LocalStorage-ga saqlash (Baza vazifasini bajaradi)
-      let records = JSON.parse(localStorage.getItem('school_attendance') || '[]');
-      records.push(newRecord);
-      localStorage.setItem('school_attendance', JSON.stringify(records));
+      const btn = document.getElementById('btn-send');
+      btn.disabled = true;
+      btn.innerText = currentLang === 'ky' ? 'Жөнөтүлүүдө...' : 'Отправка...';
 
-      document.getElementById('attendance-form').style.display = 'none';
-      document.getElementById('registered-datetime').innerText = `${dateStr} — ${timeStr}`;
-      document.getElementById('success-screen').style.display = 'block';
+      const finishSuccess = () => {
+        document.getElementById('attendance-form').style.display = 'none';
+        document.getElementById('registered-datetime').innerText = `${dateStr} — ${timeStr}`;
+        document.getElementById('success-screen').style.display = 'block';
+      };
+
+      const finishError = () => {
+        btn.disabled = false;
+        btn.innerText = currentLang === 'ky' ? 'Каттоону жөнөтүү' : 'Отправить регистрацию';
+        alert(currentLang === 'ky'
+          ? "Ката! Internet aloqasini tekshirib, qaytadan urinib ko'ring."
+          : "Ошибка! Проверьте интернет-соединение и попробуйте снова.");
+      };
+
+      if (db) {
+        // Umumiy bulutli bazaga yozish — barcha qurilmalar (telefon, planshet,
+        // iPad, iPhone, noutbuk) shu bitta bazani ko'radi, shuning uchun
+        // adminga ISHONCHLI tushadi, qaysi qurilmadan yuborilishidan qat'i nazar
+        db.ref('school_attendance').push(newRecord)
+          .then(finishSuccess)
+          .catch((err) => {
+            console.error(err);
+            finishError();
+          });
+      } else {
+        // Zaxira variant: Firebase sozlanmagan bo'lsa, faqat shu qurilmada saqlaydi
+        // (bu holatda admin panelida boshqa qurilmadan ko'rinmaydi — shuning
+        // uchun config-warning banneri ko'rsatiladi)
+        let records = JSON.parse(localStorage.getItem('school_attendance') || '[]');
+        records.push(newRecord);
+        localStorage.setItem('school_attendance', JSON.stringify(records));
+        finishSuccess();
+      }
     }
 
     function switchLang(lang) {

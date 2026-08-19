@@ -13,7 +13,7 @@
 <body>
 
   <div class="admin-container">
-    
+
     <div class="admin-top-bar">
       <div class="lang-switch">
         <button class="lang-btn active" onclick="switchAdminLang('ky')">Кыргызча</button>
@@ -27,8 +27,8 @@
 
     <header class="admin-header">
       <div>
-        <h1 id="admin-title">Мугалимдердин келинүү графиги (Апталык)</h1>
-        <p id="admin-subtitle">Сабактын башталышы: 08:00. Кечигүүлөр автоматтык түрдө эсептелет.</p>
+        <h1 id="admin-title">Мугалимдердин келинүү графиги</h1>
+        <p id="admin-subtitle">Сабактын башталышы: 09:00. Кечигүүлөр (1 мүнөттөн баштап) автоматтык түрдө эсептелет.</p>
       </div>
     </header>
 
@@ -37,87 +37,208 @@
     </div>
 
     <div class="card table-card">
-      <div class="table-responsive">
-        <table class="weekly-table">
-          <thead>
-            <tr>
-              <th>№</th>
-              <th id="th-name">Мугалимдин аты-жөнү</th>
-              <th id="th-sub">Сабагы</th>
-              <th id="d1">Дүйшөмбү</th>
-              <th id="d2">Шейшемби</th>
-              <th id="d3">Шаршемби</th>
-              <th id="d4">Бейшемби</th>
-              <th id="d5">Жума</th>
-              <th id="d6">Ишемби</th>
-            </tr>
-          </thead>
-          <tbody id="attendance-body">
-            <!-- Ma'lumotlar avtomatik tushadi -->
-          </tbody>
-        </table>
+
+      <div class="view-tabs">
+        <button class="view-tab-btn active" id="tab-daily" onclick="switchView('daily')">Күндөлүк отчёт</button>
+        <button class="view-tab-btn" id="tab-monthly" onclick="switchView('monthly')">Айлык отчёт</button>
       </div>
+
+      <!-- KUNLIK HISOBOT -->
+      <div id="daily-view">
+        <div class="date-picker-row">
+          <label id="lbl-date-picker" for="report-date">Күндү тандаңыз:</label>
+          <input type="date" id="report-date" onchange="renderDailyReport()">
+          <span class="selected-date-label" id="selected-date-label"></span>
+        </div>
+        <div class="table-responsive">
+          <table class="weekly-table">
+            <thead>
+              <tr>
+                <th>№</th>
+                <th id="th-name-daily">Мугалимдин аты-жөнү</th>
+                <th id="th-sub-daily">Сабагы</th>
+                <th id="th-time-daily">Убактысы</th>
+                <th id="th-status-daily">Абалы</th>
+              </tr>
+            </thead>
+            <tbody id="daily-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- OYLIK HISOBOT -->
+      <div id="monthly-view" style="display:none;">
+        <div class="date-picker-row">
+          <label id="lbl-month-picker" for="report-month">Айды тандаңыз:</label>
+          <input type="month" id="report-month" onchange="renderMonthlyReport()">
+        </div>
+        <div class="table-responsive">
+          <table class="weekly-table">
+            <thead id="monthly-thead"></thead>
+            <tbody id="monthly-body"></tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   </div>
 
   <script>
     let adminLang = 'ky';
     let latestRecords = [];
+    let currentView = 'daily';
 
-    function renderTable(records) {
-      const tbody = document.getElementById('attendance-body');
+    // --- Til nomlari ---
+    const weekdayNamesKy = ['Жекшемби','Дүйшөмбү','Шейшемби','Шаршемби','Бейшемби','Жума','Ишемби'];
+    const weekdayNamesRu = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+    const weekdayShortKy = ['Жек','Дүй','Шей','Шар','Бей','Жум','Ише'];
+    const weekdayShortRu = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+
+    // --- Yordamchi funksiyalar ---
+    function pad(n) { return String(n).padStart(2, '0'); }
+
+    function dateKey(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+
+    // Har bir yozuvning aniq sana-vaqtini olish (timestamp ustunroq, bo'lmasa "date" matnidan tiklaymiz)
+    function getRecordDate(rec) {
+      if (rec.timestamp) return new Date(rec.timestamp);
+      const parts = (rec.date || '').split('.');
+      if (parts.length === 3) {
+        return new Date(+parts[2], +parts[1] - 1, +parts[0], rec.hours || 0, rec.minutes || 0);
+      }
+      return new Date(0);
+    }
+
+    // --- Rejim almashtirish (Kunlik / Oylik) ---
+    function switchView(view) {
+      currentView = view;
+      document.getElementById('tab-daily').classList.toggle('active', view === 'daily');
+      document.getElementById('tab-monthly').classList.toggle('active', view === 'monthly');
+      document.getElementById('daily-view').style.display = view === 'daily' ? 'block' : 'none';
+      document.getElementById('monthly-view').style.display = view === 'monthly' ? 'block' : 'none';
+      renderCurrentView();
+    }
+
+    function renderCurrentView() {
+      if (currentView === 'daily') renderDailyReport();
+      else renderMonthlyReport();
+    }
+
+    // --- KUNLIK HISOBOT ---
+    function renderDailyReport() {
+      const dateInput = document.getElementById('report-date');
+      if (!dateInput.value) {
+        dateInput.value = dateKey(new Date());
+      }
+      const selectedKey = dateInput.value; // YYYY-MM-DD
+      const [y, m, d] = selectedKey.split('-').map(Number);
+      const selectedDate = new Date(y, m - 1, d);
+      const weekdayNames = adminLang === 'ky' ? weekdayNamesKy : weekdayNamesRu;
+      document.getElementById('selected-date-label').innerText =
+        `${weekdayNames[selectedDate.getDay()]}, ${pad(d)}.${pad(m)}.${y}`;
+
+      const dayRecords = latestRecords
+        .filter(rec => dateKey(getRecordDate(rec)) === selectedKey)
+        .sort((a, b) => a.fullname.localeCompare(b.fullname));
+
+      const tbody = document.getElementById('daily-body');
       tbody.innerHTML = '';
 
-      if (records.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a0aec0; padding:20px;">${adminLang === 'ky' ? 'Азырынча каттоодон өткөн мугалимдер жок' : 'Пока нет зарегистрированных учителей'}</td></tr>`;
+      if (dayRecords.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#a0aec0;padding:20px;">${adminLang === 'ky' ? 'Бул күнү каттоо жок' : 'В этот день регистраций нет'}</td></tr>`;
         return;
       }
 
-      // O'qituvchilarni ism-familiyasi bo'yicha guruhlash
-      const teachers = {};
-      records.forEach(rec => {
-        const key = `${rec.fullname}_${rec.subject}`;
-        if (!teachers[key]) {
-          teachers[key] = { fullname: rec.fullname, subject: rec.subject, days: {} };
+      let idx = 1;
+      dayRecords.forEach(rec => {
+        const targetTime = 9 * 60; // 09:00
+        const actualTime = rec.hours * 60 + rec.minutes;
+        const diff = actualTime - targetTime;
+        const deviceTag = rec.device ? ` <span style="opacity:0.6;font-size:0.75em;">(${rec.device})</span>` : '';
+        let statusHtml;
+        if (diff > 0) {
+          statusHtml = `<span class="badge badge-danger">${adminLang === 'ky' ? `Кечикти: ${diff} мүнөт` : `Опоздал: ${diff} мин`}</span>`;
+        } else {
+          statusHtml = `<span class="badge badge-success">${adminLang === 'ky' ? 'Убагында' : 'Вовремя'}</span>`;
         }
-        teachers[key].days[rec.dayIndex] = rec;
+        tbody.innerHTML += `<tr>
+          <td>${idx++}</td>
+          <td><b>${rec.fullname}</b></td>
+          <td>${rec.subject}</td>
+          <td>${rec.time}${deviceTag}</td>
+          <td>${statusHtml}</td>
+        </tr>`;
       });
-
-      let index = 1;
-      for (const key in teachers) {
-        const t = teachers[key];
-        let rowHtml = `<tr>
-          <td>${index++}</td>
-          <td><b>${t.fullname}</b></td>
-          <td>${t.subject}</td>`;
-
-        // Dushanbadan Shanbagacha (1 - 6)
-        for (let day = 1; day <= 6; day++) {
-          const rec = t.days[day];
-          if (rec) {
-            // Kechikishni hisoblash (08:00)
-            const targetTime = 8 * 60; // 08:00 -> 480 daqiqa
-            const actualTime = rec.hours * 60 + rec.minutes;
-            const diffMinutes = actualTime - targetTime;
-
-            const deviceTag = rec.device ? ` <span style="opacity:0.6;font-size:0.75em;">(${rec.device})</span>` : '';
-
-            if (diffMinutes > 0) {
-              const lateText = adminLang === 'ky' ? `Кечикти: ${diffMinutes} дак` : `Опоздал: ${diffMinutes} мин`;
-              rowHtml += `<td><span class="badge badge-danger">${lateText} (${rec.time})</span>${deviceTag}</td>`;
-            } else {
-              rowHtml += `<td><span class="badge badge-success">${rec.time}</span>${deviceTag}</td>`;
-            }
-          } else {
-            rowHtml += `<td><span class="badge badge-empty">-</span></td>`;
-          }
-        }
-
-        rowHtml += `</tr>`;
-        tbody.innerHTML += rowHtml;
-      }
     }
 
+    // --- OYLIK HISOBOT ---
+    function renderMonthlyReport() {
+      const monthInput = document.getElementById('report-month');
+      if (!monthInput.value) {
+        const today = new Date();
+        monthInput.value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
+      }
+      const [y, m] = monthInput.value.split('-').map(Number);
+      const daysInMonth = new Date(y, m, 0).getDate();
+      const weekdayShort = adminLang === 'ky' ? weekdayShortKy : weekdayShortRu;
+
+      // Sarlavha qatorini qurish (har bir kun uchun raqam + qisqa hafta kuni)
+      let headHtml = `<tr><th>№</th><th>${adminLang === 'ky' ? 'Мугалимдин аты-жөнү' : 'ФИО Учителя'}</th><th>${adminLang === 'ky' ? 'Сабагы' : 'Предмет'}</th>`;
+      for (let day = 1; day <= daysInMonth; day++) {
+        const d = new Date(y, m - 1, day);
+        headHtml += `<th>${day}<span class="day-cell-date">${weekdayShort[d.getDay()]}</span></th>`;
+      }
+      headHtml += `</tr>`;
+      document.getElementById('monthly-thead').innerHTML = headHtml;
+
+      // Faqat shu oyga tegishli yozuvlarni ajratish
+      const monthRecords = latestRecords.filter(rec => {
+        const rd = getRecordDate(rec);
+        return rd.getFullYear() === y && (rd.getMonth() + 1) === m;
+      });
+
+      const teachers = {};
+      monthRecords.forEach(rec => {
+        const key = `${rec.fullname}_${rec.subject}`;
+        if (!teachers[key]) teachers[key] = { fullname: rec.fullname, subject: rec.subject, days: {} };
+        const rd = getRecordDate(rec);
+        teachers[key].days[rd.getDate()] = rec;
+      });
+
+      const tbody = document.getElementById('monthly-body');
+      tbody.innerHTML = '';
+      const teacherKeys = Object.keys(teachers);
+
+      if (teacherKeys.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${daysInMonth + 3}" style="text-align:center;color:#a0aec0;padding:20px;">${adminLang === 'ky' ? 'Бул айда каттоо жок' : 'В этом месяце регистраций нет'}</td></tr>`;
+        return;
+      }
+
+      let idx = 1;
+      teacherKeys.forEach(key => {
+        const t = teachers[key];
+        let row = `<tr><td>${idx++}</td><td><b>${t.fullname}</b></td><td>${t.subject}</td>`;
+        for (let day = 1; day <= daysInMonth; day++) {
+          const rec = t.days[day];
+          if (rec) {
+            const targetTime = 9 * 60;
+            const actualTime = rec.hours * 60 + rec.minutes;
+            const diff = actualTime - targetTime;
+            if (diff > 0) {
+              row += `<td><span class="badge badge-danger" title="${rec.time}">+${diff}</span></td>`;
+            } else {
+              row += `<td><span class="badge badge-success">${rec.time}</span></td>`;
+            }
+          } else {
+            row += `<td><span class="badge badge-empty">-</span></td>`;
+          }
+        }
+        row += `</tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    // --- Ma'lumotlarni yuklash ---
     function loadAttendanceData() {
       if (db) {
         // Bulutdagi umumiy bazadan REAL VAQTDA o'qish — qaysi qurilmadan
@@ -125,14 +246,13 @@
         db.ref('school_attendance').on('value', (snapshot) => {
           const data = snapshot.val() || {};
           latestRecords = Object.values(data);
-          renderTable(latestRecords);
+          renderCurrentView();
         }, (err) => {
           console.error(err);
         });
       } else {
-        // Zaxira variant: faqat shu qurilmaning localStorage'i
         latestRecords = JSON.parse(localStorage.getItem('school_attendance') || '[]');
-        renderTable(latestRecords);
+        renderCurrentView();
       }
     }
 
@@ -150,42 +270,47 @@
     function switchAdminLang(lang) {
       adminLang = lang;
       document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+
       if (lang === 'ky') {
         document.querySelectorAll('.lang-btn')[0].classList.add('active');
-        document.getElementById('admin-title').innerText = "Мугалимдердин келинүү графиги (Апталык)";
-        document.getElementById('admin-subtitle').innerText = "Сабактын башталышы: 08:00. Кечигүүлөр автоматтык түрдө эсептелет.";
+        document.getElementById('admin-title').innerText = "Мугалимдердин келинүү графиги";
+        document.getElementById('admin-subtitle').innerText = "Сабактын башталышы: 09:00. Кечигүүлөр (1 мүнөттөн баштап) автоматтык түрдө эсептелет.";
         document.getElementById('btn-print').innerText = "Отчётту басып чыгаруу";
         document.getElementById('btn-clear').innerText = "Тазалоо";
-        document.getElementById('th-name').innerText = "Мугалимдин аты-жөнү";
-        document.getElementById('th-sub').innerText = "Сабагы";
-        document.getElementById('d1').innerText = "Дүйшөмбү";
-        document.getElementById('d2').innerText = "Шейшемби";
-        document.getElementById('d3').innerText = "Шаршемби";
-        document.getElementById('d4').innerText = "Бейшемби";
-        document.getElementById('d5').innerText = "Жума";
-        document.getElementById('d6').innerText = "Ишемби";
+        document.getElementById('tab-daily').innerText = "Күндөлүк отчёт";
+        document.getElementById('tab-monthly').innerText = "Айлык отчёт";
+        document.getElementById('lbl-date-picker').innerText = "Күндү тандаңыз:";
+        document.getElementById('lbl-month-picker').innerText = "Айды тандаңыз:";
+        document.getElementById('th-name-daily').innerText = "Мугалимдин аты-жөнү";
+        document.getElementById('th-sub-daily').innerText = "Сабагы";
+        document.getElementById('th-time-daily').innerText = "Убактысы";
+        document.getElementById('th-status-daily').innerText = "Абалы";
       } else {
         document.querySelectorAll('.lang-btn')[1].classList.add('active');
-        document.getElementById('admin-title').innerText = "График посещаемости учителей (Еженедельный)";
-        document.getElementById('admin-subtitle').innerText = "Начало занятий: 08:00. Опоздания рассчитываются автоматически.";
+        document.getElementById('admin-title').innerText = "График посещаемости учителей";
+        document.getElementById('admin-subtitle').innerText = "Начало занятий: 09:00. Опоздания (от 1 минуты) рассчитываются автоматически.";
         document.getElementById('btn-print').innerText = "Распечатать отчёт";
         document.getElementById('btn-clear').innerText = "Очистить";
-        document.getElementById('th-name').innerText = "ФИО Учителя";
-        document.getElementById('th-sub').innerText = "Предмет";
-        document.getElementById('d1').innerText = "Понедельник";
-        document.getElementById('d2').innerText = "Вторник";
-        document.getElementById('d3').innerText = "Среда";
-        document.getElementById('d4').innerText = "Четверг";
-        document.getElementById('d5').innerText = "Пятница";
-        document.getElementById('d6').innerText = "Суббота";
+        document.getElementById('tab-daily').innerText = "Дневной отчёт";
+        document.getElementById('tab-monthly').innerText = "Месячный отчёт";
+        document.getElementById('lbl-date-picker').innerText = "Выберите дату:";
+        document.getElementById('lbl-month-picker').innerText = "Выберите месяц:";
+        document.getElementById('th-name-daily').innerText = "ФИО Учителя";
+        document.getElementById('th-sub-daily').innerText = "Предмет";
+        document.getElementById('th-time-daily').innerText = "Время";
+        document.getElementById('th-status-daily').innerText = "Статус";
       }
-      renderTable(latestRecords);
+      renderCurrentView();
     }
 
     window.addEventListener('DOMContentLoaded', () => {
       if (!isFirebaseConfigured()) {
         document.getElementById('config-warning').style.display = 'block';
       }
+      // Boshlang'ich qiymatlar: bugungi kun va joriy oy
+      const today = new Date();
+      document.getElementById('report-date').value = dateKey(today);
+      document.getElementById('report-month').value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
       loadAttendanceData();
     });
   </script>

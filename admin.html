@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Мектеп директорунун панели / Панель директора</title>
   <link rel="stylesheet" href="style.css">
+  <!-- Firebase SDK: barcha qurilmalardan kelgan ma'lumotni bitta umumiy bazadan real vaqtda o'qish uchun -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
 </head>
 <body>
 
@@ -27,6 +31,10 @@
         <p id="admin-subtitle">Сабактын башталышы: 08:00. Кечигүүлөр автоматтык түрдө эсептелет.</p>
       </div>
     </header>
+
+    <div id="config-warning" style="display:none; background:#fed7d7; color:#822727; padding:12px 14px; border-radius:8px; margin-bottom:14px; font-size:0.9rem; line-height:1.4;">
+      ⚠️ Firebase sozlanmagan! Faqat shu qurilmada localStorage'ga saqlangan ma'lumotlar ko'rinadi, boshqa qurilmalardan kelgan ma'lumotlar tushmaydi. <b>firebase-config.js</b> faylini to'ldiring — README.txt'da batafsil.
+    </div>
 
     <div class="card table-card">
       <div class="table-responsive">
@@ -54,9 +62,9 @@
 
   <script>
     let adminLang = 'ky';
+    let latestRecords = [];
 
-    function loadAttendanceData() {
-      const records = JSON.parse(localStorage.getItem('school_attendance') || '[]');
+    function renderTable(records) {
       const tbody = document.getElementById('attendance-body');
       tbody.innerHTML = '';
 
@@ -92,11 +100,13 @@
             const actualTime = rec.hours * 60 + rec.minutes;
             const diffMinutes = actualTime - targetTime;
 
+            const deviceTag = rec.device ? ` <span style="opacity:0.6;font-size:0.75em;">(${rec.device})</span>` : '';
+
             if (diffMinutes > 0) {
               const lateText = adminLang === 'ky' ? `Кечикти: ${diffMinutes} дак` : `Опоздал: ${diffMinutes} мин`;
-              rowHtml += `<td><span class="badge badge-danger">${lateText} (${rec.time})</span></td>`;
+              rowHtml += `<td><span class="badge badge-danger">${lateText} (${rec.time})</span>${deviceTag}</td>`;
             } else {
-              rowHtml += `<td><span class="badge badge-success">${rec.time}</span></td>`;
+              rowHtml += `<td><span class="badge badge-success">${rec.time}</span>${deviceTag}</td>`;
             }
           } else {
             rowHtml += `<td><span class="badge badge-empty">-</span></td>`;
@@ -108,10 +118,32 @@
       }
     }
 
+    function loadAttendanceData() {
+      if (db) {
+        // Bulutdagi umumiy bazadan REAL VAQTDA o'qish — qaysi qurilmadan
+        // yozilgan bo'lishidan qat'i nazar, admin panelida darhol paydo bo'ladi
+        db.ref('school_attendance').on('value', (snapshot) => {
+          const data = snapshot.val() || {};
+          latestRecords = Object.values(data);
+          renderTable(latestRecords);
+        }, (err) => {
+          console.error(err);
+        });
+      } else {
+        // Zaxira variant: faqat shu qurilmaning localStorage'i
+        latestRecords = JSON.parse(localStorage.getItem('school_attendance') || '[]');
+        renderTable(latestRecords);
+      }
+    }
+
     function clearData() {
       if (confirm(adminLang === 'ky' ? "Бардык маалыматтарды өчүрүүнү каалайсызбы?" : "Удалить все данные?")) {
-        localStorage.removeItem('school_attendance');
-        loadAttendanceData();
+        if (db) {
+          db.ref('school_attendance').remove();
+        } else {
+          localStorage.removeItem('school_attendance');
+          loadAttendanceData();
+        }
       }
     }
 
@@ -147,12 +179,15 @@
         document.getElementById('d5').innerText = "Пятница";
         document.getElementById('d6').innerText = "Суббота";
       }
-      loadAttendanceData();
+      renderTable(latestRecords);
     }
 
-    // Sahifa yuklanganda va har 3 soniyada avtomatik yangilash
-    window.onload = loadAttendanceData;
-    setInterval(loadAttendanceData, 3000);
+    window.addEventListener('DOMContentLoaded', () => {
+      if (!isFirebaseConfigured()) {
+        document.getElementById('config-warning').style.display = 'block';
+      }
+      loadAttendanceData();
+    });
   </script>
 </body>
 </html>

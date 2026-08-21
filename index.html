@@ -64,11 +64,56 @@
         </div>
       </div>
 
+      <!-- Bitta qurilma kuniga faqat 1 marta ro'yxatdan o'ta oladi -->
+      <div class="success-screen" id="device-locked-screen" style="display: none;">
+        <div style="font-size:48px; margin-bottom:12px;">🔒</div>
+        <h3 id="locked-title">Бул түзмөк бүгүн колдонулган</h3>
+        <p id="locked-desc">Сиз (же башка бирөө) ушул телефондон бүгүн каттоодон өткөнсүз. Бир күндө бир түзмөктөн бир гана жолу каттоого болот. Эгер бул ката болсо, мектеп администрациясына кайрылыңыз.</p>
+      </div>
+
     </div>
   </div>
 
   <script>
+    // === Maktab koordinatalari va ruxsat berilgan masofa ===
+    const SCHOOL_LAT = 40.2666942;
+    const SCHOOL_LNG = 72.6095244;
+    const MAX_DISTANCE_METERS = 100;
+
     let currentLang = 'ky';
+
+    // Ikki koordinata orasidagi masofani (metrda) hisoblash (Haversine formula)
+    function getDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = deg => deg * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // Bitta qurilma kuniga faqat 1 marta ro'yxatdan o'tishi uchun kalit
+    function getDeviceLockKey() {
+      const now = new Date();
+      const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      return `device_registered_${key}`;
+    }
+
+    function isDeviceLockedToday() {
+      return localStorage.getItem(getDeviceLockKey()) === 'true';
+    }
+
+    function lockDeviceForToday() {
+      localStorage.setItem(getDeviceLockKey(), 'true');
+    }
+
+    function showDeviceLockedScreen() {
+      document.getElementById('attendance-form').style.display = 'none';
+      document.getElementById('success-screen').style.display = 'none';
+      document.getElementById('device-locked-screen').style.display = 'block';
+    }
 
     function updateClock() {
       const now = new Date();
@@ -91,23 +136,84 @@
       return "Kompyuter/Noutbuk";
     }
 
-    // Firebase sozlanmaganini foydalanuvchiga ko'rsatish
+    // Firebase sozlanmaganini foydalanuvchiga ko'rsatish + qurilma bugun ishlatilganmi tekshirish
     window.addEventListener('DOMContentLoaded', () => {
       if (!isFirebaseConfigured()) {
         document.getElementById('config-warning').style.display = 'block';
+      }
+      if (isDeviceLockedToday()) {
+        showDeviceLockedScreen();
       }
     });
 
     function handleFormSubmit(e) {
       e.preventDefault();
 
+      // 1-himoya: bitta qurilma kuniga faqat 1 marta
+      if (isDeviceLockedToday()) {
+        showDeviceLockedScreen();
+        return;
+      }
+
       const fullname = document.getElementById('fullname').value.trim();
       const subject = document.getElementById('subject').value.trim();
-      const now = new Date();
 
+      const btn = document.getElementById('btn-send');
+      btn.disabled = true;
+      btn.innerText = currentLang === 'ky' ? 'Жайгашкан жер текшерилүүдө...' : 'Проверка местоположения...';
+
+      // 2-himoya: GPS orqali maktab hududida ekanligini tekshirish
+      if (!navigator.geolocation) {
+        finishLocationError(currentLang === 'ky'
+          ? "Бул түзмөк GPS'ти колдоого албайт."
+          : "Это устройство не поддерживает GPS.");
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const distance = Math.round(getDistanceMeters(lat, lng, SCHOOL_LAT, SCHOOL_LNG));
+
+          if (distance > MAX_DISTANCE_METERS) {
+            finishLocationError(currentLang === 'ky'
+              ? `Сиз мектептен алыс жердесиз (болжол менен ${distance} метр). Каттоо мектеп аймагында гана иштейт (${MAX_DISTANCE_METERS} м чегинде).`
+              : `Вы находитесь далеко от школы (примерно ${distance} м). Регистрация работает только на территории школы (в пределах ${MAX_DISTANCE_METERS} м).`);
+            return;
+          }
+
+          submitRecord(fullname, subject, lat, lng, distance);
+        },
+        (err) => {
+          let msg;
+          if (err.code === err.PERMISSION_DENIED) {
+            msg = currentLang === 'ky'
+              ? "Жайгашкан жерге (GPS) уруксат берилген жок. Каттоо үчүн GPS'ти жандырыңыз."
+              : "Доступ к местоположению (GPS) не разрешён. Включите GPS для регистрации.";
+          } else {
+            msg = currentLang === 'ky'
+              ? "Жайгашкан жерди аныктоо мүмкүн болбоду. Кайра аракет кылыңыз."
+              : "Не удалось определить местоположение. Попробуйте снова.";
+          }
+          finishLocationError(msg);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    function finishLocationError(message) {
+      const btn = document.getElementById('btn-send');
+      btn.disabled = false;
+      btn.innerText = currentLang === 'ky' ? 'Каттоону жөнөтүү' : 'Отправить регистрацию';
+      alert(message);
+    }
+
+    function submitRecord(fullname, subject, lat, lng, distance) {
+      const now = new Date();
       const timeStr = now.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'});
       const dateStr = now.toLocaleDateString('ru-RU');
-      const dayIndex = now.getDay(); // 1 = Düyşönbü, 2 = Şeyşembı...
+      const dayIndex = now.getDay();
 
       const newRecord = {
         fullname: fullname,
@@ -118,14 +224,18 @@
         hours: now.getHours(),
         minutes: now.getMinutes(),
         device: detectDeviceType(),
-        timestamp: now.getTime()
+        timestamp: now.getTime(),
+        latitude: lat,
+        longitude: lng,
+        distanceMeters: distance
       };
 
       const btn = document.getElementById('btn-send');
-      btn.disabled = true;
       btn.innerText = currentLang === 'ky' ? 'Жөнөтүлүүдө...' : 'Отправка...';
 
       const finishSuccess = () => {
+        // Muvaffaqiyatli ro'yxatdan o'tgach, shu qurilmani bugunga qulflaymiz
+        lockDeviceForToday();
         document.getElementById('attendance-form').style.display = 'none';
         document.getElementById('registered-datetime').innerText = `${dateStr} — ${timeStr}`;
         document.getElementById('success-screen').style.display = 'block';
@@ -174,6 +284,8 @@
         document.getElementById('btn-send').innerText = "Каттоону жөнөтүү";
         document.getElementById('succ-title').innerText = "Сиз ийгиликтүү катталдыңыз!";
         document.getElementById('succ-desc').innerText = "Маалыматыңыз директордун панелине жөнөтүлдү.";
+        document.getElementById('locked-title').innerText = "Бул түзмөк бүгүн колдонулган";
+        document.getElementById('locked-desc').innerText = "Сиз (же башка бирөө) ушул телефондон бүгүн каттоодон өткөнсүз. Бир күндө бир түзмөктөн бир гана жолу каттоого болот. Эгер бул ката болсо, мектеп администрациясына кайрылыңыз.";
       } else {
         document.querySelectorAll('.lang-btn')[1].classList.add('active');
         document.getElementById('form-title').innerText = "Регистрация прихода в школу";
@@ -185,6 +297,8 @@
         document.getElementById('btn-send').innerText = "Отправить регистрацию";
         document.getElementById('succ-title').innerText = "Вы успешно зарегистрированы!";
         document.getElementById('succ-desc').innerText = "Ваши данные отправлены в панель директора.";
+        document.getElementById('locked-title').innerText = "Это устройство уже использовано сегодня";
+        document.getElementById('locked-desc').innerText = "Вы (или кто-то другой) уже зарегистрировались с этого телефона сегодня. С одного устройства можно зарегистрироваться только один раз в день. Если это ошибка, обратитесь к администрации школы.";
       }
       updateClock();
     }

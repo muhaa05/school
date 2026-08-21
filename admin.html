@@ -154,7 +154,8 @@
         const targetTime = 9 * 60; // 09:00
         const actualTime = rec.hours * 60 + rec.minutes;
         const diff = actualTime - targetTime;
-        const deviceTag = rec.device ? ` <span style="opacity:0.6;font-size:0.75em;">(${rec.device})</span>` : '';
+        const distanceInfo = (typeof rec.distanceMeters === 'number') ? `, ${rec.distanceMeters}м` : '';
+        const deviceTag = rec.device ? ` <span style="opacity:0.6;font-size:0.75em;">(${rec.device}${distanceInfo})</span>` : '';
         let statusHtml;
         if (diff > 0) {
           statusHtml = `<span class="badge badge-danger">${adminLang === 'ky' ? `Кечикти: ${diff} мүнөт` : `Опоздал: ${diff} мин`}</span>`;

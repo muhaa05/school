@@ -41,6 +41,7 @@
       <div class="view-tabs">
         <button class="view-tab-btn active" id="tab-daily" onclick="switchView('daily')">Күндөлүк отчёт</button>
         <button class="view-tab-btn" id="tab-monthly" onclick="switchView('monthly')">Айлык отчёт</button>
+        <button class="view-tab-btn" id="tab-roster" onclick="switchView('roster')">Мугалимдер тизмеси</button>
       </div>
 
       <!-- KUNLIK HISOBOT -->
@@ -50,6 +51,9 @@
           <input type="date" id="report-date" onchange="renderDailyReport()">
           <span class="selected-date-label" id="selected-date-label"></span>
         </div>
+
+        <button class="btn-whatsapp" id="btn-send-whatsapp" onclick="sendDailyReportToWhatsApp()">📤 Отчётту WhatsApp'ка жиберүү</button>
+
         <div class="table-responsive">
           <table class="weekly-table">
             <thead>
@@ -80,6 +84,36 @@
         </div>
       </div>
 
+      <!-- MUGALIMLAR RO'YXATI (ROSTER) -->
+      <div id="roster-view" style="display:none;">
+        <p id="roster-desc" style="color:#718096; font-size:14px; margin-bottom:14px;">
+          Бул жерге бардык мугалимдердин аты-жөнүн киргизиңиз. Ким бүгүн катталбаса, күндөлүк отчётто автоматтык түрдө "Келген жок" деп көрсөтүлөт.
+        </p>
+
+        <div class="date-picker-row">
+          <input type="text" id="roster-fullname" placeholder="Аты-жөнү (мис: Асанов Улан)" style="flex:1; min-width:180px; padding:10px 14px; border:1px solid #cbd5e0; border-radius:8px;">
+          <input type="text" id="roster-subject" placeholder="Сабагы (мис: Информатика)" style="flex:1; min-width:150px; padding:10px 14px; border:1px solid #cbd5e0; border-radius:8px;">
+          <button class="btn-add-roster" id="btn-roster-add" onclick="addTeacherToRoster()">Кошуу</button>
+        </div>
+
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid #e2e8f0;">
+          <p id="bulk-desc" style="font-size:13px; color:#718096; margin-bottom:8px;">Же көп мугалимди бир жолу кошуу үчүн, ар бир сапта "Аты-жөнү, Сабагы" форматында жазыңыз:</p>
+          <textarea id="bulk-roster-input" rows="6" placeholder="Асанов Улан, Информатика&#10;Кадырова Айгүл, Математика&#10;..." style="width:100%; padding:12px; border:1px solid #cbd5e0; border-radius:8px; font-family:monospace; font-size:13px; resize:vertical;"></textarea>
+          <button class="btn-add-roster" id="btn-bulk-add" onclick="bulkAddTeachers()" style="margin-top:8px;">Баарын кошуу</button>
+        </div>
+
+        <div id="roster-list" style="margin-top:16px;"></div>
+
+        <div class="settings-box">
+          <h3 id="settings-title" style="font-size:16px; margin-bottom:10px;">WhatsApp сазоолору</h3>
+          <div class="date-picker-row">
+            <label id="lbl-director-phone" for="director-phone-input">Директордун WhatsApp номери (мис: 996XXXXXXXXX):</label>
+            <input type="text" id="director-phone-input" placeholder="996XXXXXXXXX" style="padding:10px 14px; border:1px solid #cbd5e0; border-radius:8px;">
+            <button class="btn-add-roster" id="btn-director-phone-save" onclick="saveDirectorPhone()">Сактоо</button>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -87,6 +121,9 @@
     let adminLang = 'ky';
     let latestRecords = [];
     let currentView = 'daily';
+    let rosterList = [];
+    let directorPhone = '';
+    let lastDailyCombinedList = [];
 
     // --- Til nomlari ---
     const weekdayNamesKy = ['Жекшемби','Дүйшөмбү','Шейшемби','Шаршемби','Бейшемби','Жума','Ишемби'];
@@ -109,22 +146,24 @@
       return new Date(0);
     }
 
-    // --- Rejim almashtirish (Kunlik / Oylik) ---
+    // --- Rejim almashtirish (Kunlik / Oylik / Ro'yxat) ---
     function switchView(view) {
       currentView = view;
       document.getElementById('tab-daily').classList.toggle('active', view === 'daily');
       document.getElementById('tab-monthly').classList.toggle('active', view === 'monthly');
+      document.getElementById('tab-roster').classList.toggle('active', view === 'roster');
       document.getElementById('daily-view').style.display = view === 'daily' ? 'block' : 'none';
       document.getElementById('monthly-view').style.display = view === 'monthly' ? 'block' : 'none';
+      document.getElementById('roster-view').style.display = view === 'roster' ? 'block' : 'none';
       renderCurrentView();
     }
 
     function renderCurrentView() {
       if (currentView === 'daily') renderDailyReport();
-      else renderMonthlyReport();
+      else if (currentView === 'monthly') renderMonthlyReport();
     }
 
-    // --- KUNLIK HISOBOT ---
+    // --- KUNLIK HISOBOT (roster asosida "Kelmadi" bilan) ---
     function renderDailyReport() {
       const dateInput = document.getElementById('report-date');
       if (!dateInput.value) {
@@ -137,36 +176,71 @@
       document.getElementById('selected-date-label').innerText =
         `${weekdayNames[selectedDate.getDay()]}, ${pad(d)}.${pad(m)}.${y}`;
 
-      const dayRecords = latestRecords
-        .filter(rec => dateKey(getRecordDate(rec)) === selectedKey)
-        .sort((a, b) => a.fullname.localeCompare(b.fullname));
+      const dayRecords = latestRecords.filter(rec => dateKey(getRecordDate(rec)) === selectedKey);
+
+      // Har bir mugalim ismi bo'yicha eng oxirgi yozuvni saqlaymiz
+      const dayRecordsMap = {};
+      dayRecords.forEach(rec => {
+        dayRecordsMap[(rec.fullname || '').trim().toLowerCase()] = rec;
+      });
+
+      // Roster (mugalimlar ro'yxati) asosida to'liq ro'yxat qurish
+      const combinedList = [];
+      const usedKeys = new Set();
+
+      rosterList.forEach(t => {
+        const key = t.fullname.trim().toLowerCase();
+        const rec = dayRecordsMap[key] || null;
+        combinedList.push({ fullname: t.fullname, subject: t.subject, rec });
+        usedKeys.add(key);
+      });
+
+      // Roster'da yo'q, lekin o'zi ro'yxatdan o'tgan (qo'shimcha) yozuvlar
+      Object.keys(dayRecordsMap).forEach(key => {
+        if (!usedKeys.has(key)) {
+          const rec = dayRecordsMap[key];
+          combinedList.push({ fullname: rec.fullname, subject: rec.subject, rec });
+        }
+      });
+
+      combinedList.sort((a, b) => a.fullname.localeCompare(b.fullname));
+      lastDailyCombinedList = combinedList;
 
       const tbody = document.getElementById('daily-body');
       tbody.innerHTML = '';
 
-      if (dayRecords.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#a0aec0;padding:20px;">${adminLang === 'ky' ? 'Бул күнү каттоо жок' : 'В этот день регистраций нет'}</td></tr>`;
+      if (combinedList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#a0aec0;padding:20px;">${adminLang === 'ky' ? 'Мугалимдер тизмеси бош — "Мугалимдер тизмеси" бөлүмүнөн кошуңуз' : 'Список учителей пуст — добавьте в разделе "Список учителей"'}</td></tr>`;
         return;
       }
 
       let idx = 1;
-      dayRecords.forEach(rec => {
-        const targetTime = 9 * 60; // 09:00
-        const actualTime = rec.hours * 60 + rec.minutes;
-        const diff = actualTime - targetTime;
-        const distanceInfo = (typeof rec.distanceMeters === 'number') ? `, ${rec.distanceMeters}м` : '';
-        const deviceTag = rec.device ? ` <span style="opacity:0.6;font-size:0.75em;">(${rec.device}${distanceInfo})</span>` : '';
+      combinedList.forEach(item => {
+        let timeCell = '-';
         let statusHtml;
-        if (diff > 0) {
-          statusHtml = `<span class="badge badge-danger">${adminLang === 'ky' ? `Кечикти: ${diff} мүнөт` : `Опоздал: ${diff} мин`}</span>`;
+
+        if (item.rec) {
+          const targetTime = 9 * 60; // 09:00
+          const actualTime = item.rec.hours * 60 + item.rec.minutes;
+          const diff = actualTime - targetTime;
+          const distanceInfo = (typeof item.rec.distanceMeters === 'number') ? `, ${item.rec.distanceMeters}м` : '';
+          const deviceTag = item.rec.device ? ` <span style="opacity:0.6;font-size:0.75em;">(${item.rec.device}${distanceInfo})</span>` : '';
+          timeCell = `${item.rec.time}${deviceTag}`;
+
+          if (diff > 0) {
+            statusHtml = `<span class="badge badge-danger">${adminLang === 'ky' ? `Кечикти: ${diff} мүнөт` : `Опоздал: ${diff} мин`}</span>`;
+          } else {
+            statusHtml = `<span class="badge badge-success">${adminLang === 'ky' ? 'Убагында' : 'Вовремя'}</span>`;
+          }
         } else {
-          statusHtml = `<span class="badge badge-success">${adminLang === 'ky' ? 'Убагында' : 'Вовремя'}</span>`;
+          statusHtml = `<span class="badge badge-absent">${adminLang === 'ky' ? 'Келген жок' : 'Не пришёл'}</span>`;
         }
+
         tbody.innerHTML += `<tr>
           <td>${idx++}</td>
-          <td><b>${rec.fullname}</b></td>
-          <td>${rec.subject}</td>
-          <td>${rec.time}${deviceTag}</td>
+          <td><b>${item.fullname}</b></td>
+          <td>${item.subject}</td>
+          <td>${timeCell}</td>
           <td>${statusHtml}</td>
         </tr>`;
       });
@@ -183,7 +257,6 @@
       const daysInMonth = new Date(y, m, 0).getDate();
       const weekdayShort = adminLang === 'ky' ? weekdayShortKy : weekdayShortRu;
 
-      // Sarlavha qatorini qurish (har bir kun uchun raqam + qisqa hafta kuni)
       let headHtml = `<tr><th>№</th><th>${adminLang === 'ky' ? 'Мугалимдин аты-жөнү' : 'ФИО Учителя'}</th><th>${adminLang === 'ky' ? 'Сабагы' : 'Предмет'}</th>`;
       for (let day = 1; day <= daysInMonth; day++) {
         const d = new Date(y, m - 1, day);
@@ -192,13 +265,19 @@
       headHtml += `</tr>`;
       document.getElementById('monthly-thead').innerHTML = headHtml;
 
-      // Faqat shu oyga tegishli yozuvlarni ajratish
       const monthRecords = latestRecords.filter(rec => {
         const rd = getRecordDate(rec);
         return rd.getFullYear() === y && (rd.getMonth() + 1) === m;
       });
 
       const teachers = {};
+
+      // Avval roster'dagi barcha mugalimlarni qo'shamiz (hatto shu oy ro'yxatdan o'tmagan bo'lsa ham)
+      rosterList.forEach(t => {
+        const key = `${t.fullname}_${t.subject}`;
+        teachers[key] = { fullname: t.fullname, subject: t.subject, days: {} };
+      });
+
       monthRecords.forEach(rec => {
         const key = `${rec.fullname}_${rec.subject}`;
         if (!teachers[key]) teachers[key] = { fullname: rec.fullname, subject: rec.subject, days: {} };
@@ -216,6 +295,7 @@
       }
 
       let idx = 1;
+      teacherKeys.sort((a, b) => teachers[a].fullname.localeCompare(teachers[b].fullname));
       teacherKeys.forEach(key => {
         const t = teachers[key];
         let row = `<tr><td>${idx++}</td><td><b>${t.fullname}</b></td><td>${t.subject}</td>`;
@@ -237,6 +317,224 @@
         row += `</tr>`;
         tbody.innerHTML += row;
       });
+    }
+
+    // --- MUGALIMLAR RO'YXATI (ROSTER) ---
+    function renderRosterList() {
+      const container = document.getElementById('roster-list');
+      container.innerHTML = '';
+
+      if (rosterList.length === 0) {
+        container.innerHTML = `<p style="color:#a0aec0; text-align:center; padding:16px;">${adminLang === 'ky' ? 'Азырынча мугалим кошулган жок' : 'Пока нет добавленных учителей'}</p>`;
+        return;
+      }
+
+      const sorted = [...rosterList].sort((a, b) => a.fullname.localeCompare(b.fullname));
+      sorted.forEach(t => {
+        container.innerHTML += `<div class="roster-item">
+          <span><b>${t.fullname}</b> — ${t.subject}</span>
+          <button class="btn-remove" onclick="removeTeacherFromRoster('${t.id}')">✕</button>
+        </div>`;
+      });
+    }
+
+    function addTeacherToRoster() {
+      const fullnameInput = document.getElementById('roster-fullname');
+      const subjectInput = document.getElementById('roster-subject');
+      const fullname = fullnameInput.value.trim();
+      const subject = subjectInput.value.trim();
+
+      if (!fullname || !subject) {
+        alert(adminLang === 'ky' ? "Аты-жөнү жана сабакты толук киргизиңиз!" : "Введите имя и предмет полностью!");
+        return;
+      }
+
+      if (db) {
+        db.ref('teachers_roster').push({ fullname, subject });
+      } else {
+        const roster = JSON.parse(localStorage.getItem('teachers_roster') || '[]');
+        roster.push({ id: Date.now().toString(), fullname, subject });
+        localStorage.setItem('teachers_roster', JSON.stringify(roster));
+        loadRoster();
+      }
+
+      fullnameInput.value = '';
+      subjectInput.value = '';
+      fullnameInput.focus();
+    }
+
+    function bulkAddTeachers() {
+      const textarea = document.getElementById('bulk-roster-input');
+      const lines = textarea.value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+      if (lines.length === 0) {
+        alert(adminLang === 'ky' ? "Тизме бош!" : "Список пуст!");
+        return;
+      }
+
+      let addedCount = 0;
+      let skippedCount = 0;
+
+      lines.forEach(line => {
+        const parts = line.split(',').map(p => p.trim());
+        let fullname = '', subject = '';
+
+        if (parts.length >= 2 && parts[0] && parts[1]) {
+          fullname = parts[0];
+          subject = parts[1];
+        } else if (parts.length === 1 && parts[0]) {
+          fullname = parts[0];
+          subject = '—'; // Fan ko'rsatilmagan — keyinroq admin panelida to'ldirish mumkin
+        }
+
+        if (fullname) {
+          if (db) {
+            db.ref('teachers_roster').push({ fullname, subject });
+          } else {
+            const roster = JSON.parse(localStorage.getItem('teachers_roster') || '[]');
+            roster.push({ id: Date.now().toString() + Math.random().toString(36).slice(2), fullname, subject });
+            localStorage.setItem('teachers_roster', JSON.stringify(roster));
+          }
+          addedCount++;
+        } else {
+          skippedCount++;
+        }
+      });
+
+      if (!db) loadRoster();
+
+      textarea.value = '';
+      alert(adminLang === 'ky'
+        ? `${addedCount} мугалим кошулду.${skippedCount > 0 ? ` (${skippedCount} сап туура эмес форматта болгондуктан өткөрүлүп жиберилди)` : ''}`
+        : `Добавлено учителей: ${addedCount}.${skippedCount > 0 ? ` (${skippedCount} строк пропущено из-за неверного формата)` : ''}`);
+    }
+      if (!confirm(adminLang === 'ky' ? "Бул мугалимди тизмеден өчүрүүнү каалайсызбы?" : "Удалить этого учителя из списка?")) return;
+
+      if (db) {
+        db.ref('teachers_roster/' + id).remove();
+      } else {
+        let roster = JSON.parse(localStorage.getItem('teachers_roster') || '[]');
+        roster = roster.filter(t => t.id !== id);
+        localStorage.setItem('teachers_roster', JSON.stringify(roster));
+        loadRoster();
+      }
+    }
+
+    function loadRoster() {
+      if (db) {
+        db.ref('teachers_roster').on('value', (snapshot) => {
+          const data = snapshot.val() || {};
+          rosterList = Object.entries(data).map(([id, val]) => ({ id, fullname: val.fullname, subject: val.subject }));
+          renderRosterList();
+          renderCurrentView();
+        });
+      } else {
+        rosterList = JSON.parse(localStorage.getItem('teachers_roster') || '[]');
+        renderRosterList();
+        renderCurrentView();
+      }
+    }
+
+    // --- WHATSAPP SOZLAMALARI ---
+    function loadDirectorPhone() {
+      if (db) {
+        db.ref('settings/director_phone').on('value', (snap) => {
+          directorPhone = snap.val() || '';
+          document.getElementById('director-phone-input').value = directorPhone;
+        });
+      } else {
+        directorPhone = localStorage.getItem('director_phone') || '';
+        document.getElementById('director-phone-input').value = directorPhone;
+      }
+    }
+
+    function saveDirectorPhone() {
+      const phone = document.getElementById('director-phone-input').value.trim().replace(/[^0-9]/g, '');
+      if (!phone) {
+        alert(adminLang === 'ky' ? "Номерди туура киргизиңиз (мис: 996XXXXXXXXX)" : "Введите номер правильно (напр: 996XXXXXXXXX)");
+        return;
+      }
+      if (db) {
+        db.ref('settings/director_phone').set(phone);
+      } else {
+        localStorage.setItem('director_phone', phone);
+        directorPhone = phone;
+      }
+      alert(adminLang === 'ky' ? "Сакталды!" : "Сохранено!");
+    }
+
+    // --- WHATSAPP'KA OTCHYOT YUBORISH ---
+    function sendDailyReportToWhatsApp() {
+      if (!directorPhone) {
+        alert(adminLang === 'ky'
+          ? "Алгач \"Мугалимдер тизмеси\" бөлүмүндө WhatsApp номерин киргизип, сактаңыз."
+          : "Сначала введите и сохраните номер WhatsApp в разделе \"Список учителей\".");
+        return;
+      }
+      if (!lastDailyCombinedList || lastDailyCombinedList.length === 0) {
+        alert(adminLang === 'ky' ? "Жөнөтүү үчүн маалымат жок." : "Нет данных для отправки.");
+        return;
+      }
+
+      const dateInput = document.getElementById('report-date');
+      const [y, m, d] = dateInput.value.split('-').map(Number);
+      const selectedDate = new Date(y, m - 1, d);
+      const weekdayNames = adminLang === 'ky' ? weekdayNamesKy : weekdayNamesRu;
+      const dateLabel = `${pad(d)}.${pad(m)}.${y}`;
+
+      let message = adminLang === 'ky'
+        ? `📋 *Мугалимдердин катталуу отчёту*\n${weekdayNames[selectedDate.getDay()]}, ${dateLabel}\n\n`
+        : `📋 *Отчёт о регистрации учителей*\n${weekdayNames[selectedDate.getDay()]}, ${dateLabel}\n\n`;
+
+      let presentCount = 0, lateCount = 0, absentCount = 0;
+      const absentNames = [];
+      const targetTime = 9 * 60;
+
+      lastDailyCombinedList.forEach((item, i) => {
+        if (item.rec) {
+          const actualTime = item.rec.hours * 60 + item.rec.minutes;
+          const diff = actualTime - targetTime;
+          if (diff > 0) {
+            lateCount++;
+            message += `${i + 1}. ${item.fullname} — ⏰ ${adminLang === 'ky' ? `Кечикти (${diff} мүн)` : `Опоздал (${diff} мин)`}, ${item.rec.time}\n`;
+          } else {
+            presentCount++;
+            message += `${i + 1}. ${item.fullname} — ✅ ${adminLang === 'ky' ? 'Убагында' : 'Вовремя'} (${item.rec.time})\n`;
+          }
+        } else {
+          absentCount++;
+          absentNames.push(item.fullname);
+          message += `${i + 1}. ${item.fullname} — ❌ ${adminLang === 'ky' ? 'Келген жок' : 'Не пришёл'}\n`;
+        }
+      });
+
+      const total = lastDailyCombinedList.length;
+      const attendedCount = presentCount + lateCount;
+      const attendancePercent = total > 0 ? Math.round((attendedCount / total) * 100) : 0;
+
+      message += adminLang === 'ky'
+        ? `\n*Жыйынтык:* Убагында: ${presentCount} | Кечикти: ${lateCount} | Келген жок: ${absentCount}\n*Катышуу пайызы:* ${attendancePercent}% (${attendedCount}/${total})`
+        : `\n*Итог:* Вовремя: ${presentCount} | Опоздали: ${lateCount} | Не пришли: ${absentCount}\n*Процент посещаемости:* ${attendancePercent}% (${attendedCount}/${total})`;
+
+      if (absentNames.length > 0) {
+        message += adminLang === 'ky'
+          ? `\n\n*Келбегендер:*\n${absentNames.map((n, idx) => `${idx + 1}. ${n}`).join('\n')}`
+          : `\n\n*Отсутствуют:*\n${absentNames.map((n, idx) => `${idx + 1}. ${n}`).join('\n')}`;
+      }
+
+      const encoded = encodeURIComponent(message);
+      const ua = navigator.userAgent || '';
+      const isMobile = /iPhone|iPad|Android|Mobile/i.test(ua);
+
+      if (isMobile) {
+        window.location.href = `https://api.whatsapp.com/send?phone=${directorPhone}&text=${encoded}`;
+      } else {
+        const url = `https://wa.me/${directorPhone}?text=${encoded}`;
+        const w = window.open(url, '_blank');
+        if (!w || w.closed || typeof w.closed === 'undefined') {
+          window.location.href = url;
+        }
+      }
     }
 
     // --- Ma'lumotlarni yuklash ---
@@ -280,12 +578,23 @@
         document.getElementById('btn-clear').innerText = "Тазалоо";
         document.getElementById('tab-daily').innerText = "Күндөлүк отчёт";
         document.getElementById('tab-monthly').innerText = "Айлык отчёт";
+        document.getElementById('tab-roster').innerText = "Мугалимдер тизмеси";
         document.getElementById('lbl-date-picker').innerText = "Күндү тандаңыз:";
         document.getElementById('lbl-month-picker').innerText = "Айды тандаңыз:";
         document.getElementById('th-name-daily').innerText = "Мугалимдин аты-жөнү";
         document.getElementById('th-sub-daily').innerText = "Сабагы";
         document.getElementById('th-time-daily').innerText = "Убактысы";
         document.getElementById('th-status-daily').innerText = "Абалы";
+        document.getElementById('btn-send-whatsapp').innerText = "📤 Отчётту WhatsApp'ка жиберүү";
+        document.getElementById('roster-desc').innerText = "Бул жерге бардык мугалимдердин аты-жөнүн киргизиңиз. Ким бүгүн катталбаса, күндөлүк отчётто автоматтык түрдө \"Келген жок\" деп көрсөтүлөт.";
+        document.getElementById('btn-roster-add').innerText = "Кошуу";
+        document.getElementById('bulk-desc').innerText = "Же көп мугалимди бир жолу кошуу үчүн, ар бир сапта \"Аты-жөнү, Сабагы\" форматында жазыңыз:";
+        document.getElementById('btn-bulk-add').innerText = "Баарын кошуу";
+        document.getElementById('settings-title').innerText = "WhatsApp сазоолору";
+        document.getElementById('lbl-director-phone').innerText = "Директордун WhatsApp номери (мис: 996XXXXXXXXX):";
+        document.getElementById('btn-director-phone-save').innerText = "Сактоо";
+        document.getElementById('roster-fullname').placeholder = "Аты-жөнү (мис: Асанов Улан)";
+        document.getElementById('roster-subject').placeholder = "Сабагы (мис: Информатика)";
       } else {
         document.querySelectorAll('.lang-btn')[1].classList.add('active');
         document.getElementById('admin-title').innerText = "График посещаемости учителей";
@@ -294,13 +603,25 @@
         document.getElementById('btn-clear').innerText = "Очистить";
         document.getElementById('tab-daily').innerText = "Дневной отчёт";
         document.getElementById('tab-monthly').innerText = "Месячный отчёт";
+        document.getElementById('tab-roster').innerText = "Список учителей";
         document.getElementById('lbl-date-picker').innerText = "Выберите дату:";
         document.getElementById('lbl-month-picker').innerText = "Выберите месяц:";
         document.getElementById('th-name-daily').innerText = "ФИО Учителя";
         document.getElementById('th-sub-daily').innerText = "Предмет";
         document.getElementById('th-time-daily').innerText = "Время";
         document.getElementById('th-status-daily').innerText = "Статус";
+        document.getElementById('btn-send-whatsapp').innerText = "📤 Отправить отчёт в WhatsApp";
+        document.getElementById('roster-desc').innerText = "Введите здесь ФИО всех учителей. Кто не зарегистрируется сегодня, автоматически будет показан как \"Не пришёл\" в дневном отчёте.";
+        document.getElementById('btn-roster-add').innerText = "Добавить";
+        document.getElementById('bulk-desc').innerText = "Или чтобы добавить сразу много учителей, напишите на каждой строке в формате \"ФИО, Предмет\":";
+        document.getElementById('btn-bulk-add').innerText = "Добавить всех";
+        document.getElementById('settings-title').innerText = "Настройки WhatsApp";
+        document.getElementById('lbl-director-phone').innerText = "Номер WhatsApp директора (напр: 996XXXXXXXXX):";
+        document.getElementById('btn-director-phone-save').innerText = "Сохранить";
+        document.getElementById('roster-fullname').placeholder = "ФИО (напр: Асанов Улан)";
+        document.getElementById('roster-subject').placeholder = "Предмет (напр: Информатика)";
       }
+      renderRosterList();
       renderCurrentView();
     }
 
@@ -313,6 +634,8 @@
       document.getElementById('report-date').value = dateKey(today);
       document.getElementById('report-month').value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
       loadAttendanceData();
+      loadRoster();
+      loadDirectorPhone();
     });
   </script>
 </body>

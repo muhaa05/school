@@ -408,6 +408,7 @@
         ? `${addedCount} мугалим кошулду.${skippedCount > 0 ? ` (${skippedCount} сап туура эмес форматта болгондуктан өткөрүлүп жиберилди)` : ''}`
         : `Добавлено учителей: ${addedCount}.${skippedCount > 0 ? ` (${skippedCount} строк пропущено из-за неверного формата)` : ''}`);
     }
+    function removeTeacherFromRoster(id) {
       if (!confirm(adminLang === 'ky' ? "Бул мугалимди тизмеден өчүрүүнү каалайсызбы?" : "Удалить этого учителя из списка?")) return;
 
       if (db) {

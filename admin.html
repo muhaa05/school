@@ -68,6 +68,11 @@
             <tbody id="daily-body"></tbody>
           </table>
         </div>
+
+        <div id="absent-section" style="margin-top:24px;">
+          <h3 id="absent-section-title" style="color:#c53030; font-size:16px; margin-bottom:10px;">❌ Келбегендер</h3>
+          <div id="absent-list"></div>
+        </div>
       </div>
 
       <!-- OYLIK HISOBOT -->
@@ -163,7 +168,7 @@
       else if (currentView === 'monthly') renderMonthlyReport();
     }
 
-    // --- KUNLIK HISOBOT (roster asosida "Kelmadi" bilan) ---
+    // --- KUNLIK HISOBOT (roster asosida, "Kelmadi"lar alohida ro'yxatda) ---
     function renderDailyReport() {
       const dateInput = document.getElementById('report-date');
       if (!dateInput.value) {
@@ -184,66 +189,90 @@
         dayRecordsMap[(rec.fullname || '').trim().toLowerCase()] = rec;
       });
 
-      // Roster (mugalimlar ro'yxati) asosida to'liq ro'yxat qurish
-      const combinedList = [];
+      // Roster (mugalimlar ro'yxati) asosida kelgan/kelmagan ajratish
+      const presentList = [];
+      const absentList = [];
       const usedKeys = new Set();
 
       rosterList.forEach(t => {
         const key = t.fullname.trim().toLowerCase();
         const rec = dayRecordsMap[key] || null;
-        combinedList.push({ fullname: t.fullname, subject: t.subject, rec });
+        if (rec) {
+          presentList.push({ fullname: t.fullname, subject: t.subject, rec });
+        } else {
+          absentList.push({ fullname: t.fullname, subject: t.subject, rec: null });
+        }
         usedKeys.add(key);
       });
 
-      // Roster'da yo'q, lekin o'zi ro'yxatdan o'tgan (qo'shimcha) yozuvlar
+      // Roster'da yo'q, lekin baribir ro'yxatdan o'tgan (eski/qo'shimcha) yozuvlar — kelganlar oxiriga qo'shiladi
       Object.keys(dayRecordsMap).forEach(key => {
         if (!usedKeys.has(key)) {
           const rec = dayRecordsMap[key];
-          combinedList.push({ fullname: rec.fullname, subject: rec.subject, rec });
+          presentList.push({ fullname: rec.fullname, subject: rec.subject, rec });
         }
       });
 
-      combinedList.sort((a, b) => a.fullname.localeCompare(b.fullname));
-      lastDailyCombinedList = combinedList;
+      // Kelganlar — kelish vaqti bo'yicha (birinchi kelgan yuqorida, oxirgi kelgan pastda)
+      presentList.sort((a, b) => (a.rec.hours * 60 + a.rec.minutes) - (b.rec.hours * 60 + b.rec.minutes));
+      // Kelmaganlar — ism bo'yicha alifbo tartibida
+      absentList.sort((a, b) => a.fullname.localeCompare(b.fullname));
 
+      // WhatsApp funksiyasi uchun: kelganlar (vaqt bo'yicha) + kelmaganlar (eng oxirida)
+      lastDailyCombinedList = [...presentList, ...absentList];
+
+      // --- KELGANLAR jadvali ---
       const tbody = document.getElementById('daily-body');
       tbody.innerHTML = '';
 
-      if (combinedList.length === 0) {
+      if (presentList.length === 0 && absentList.length === 0) {
         tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#a0aec0;padding:20px;">${adminLang === 'ky' ? 'Мугалимдер тизмеси бош — "Мугалимдер тизмеси" бөлүмүнөн кошуңуз' : 'Список учителей пуст — добавьте в разделе "Список учителей"'}</td></tr>`;
-        return;
-      }
-
-      let idx = 1;
-      combinedList.forEach(item => {
-        let timeCell = '-';
-        let statusHtml;
-
-        if (item.rec) {
+      } else if (presentList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#a0aec0;padding:20px;">${adminLang === 'ky' ? 'Бул күнү эч ким катталган жок' : 'В этот день никто не зарегистрировался'}</td></tr>`;
+      } else {
+        let idx = 1;
+        presentList.forEach(item => {
           const targetTime = 9 * 60; // 09:00
           const actualTime = item.rec.hours * 60 + item.rec.minutes;
           const diff = actualTime - targetTime;
           const distanceInfo = (typeof item.rec.distanceMeters === 'number') ? `, ${item.rec.distanceMeters}м` : '';
           const deviceTag = item.rec.device ? ` <span style="opacity:0.6;font-size:0.75em;">(${item.rec.device}${distanceInfo})</span>` : '';
-          timeCell = `${item.rec.time}${deviceTag}`;
-
+          const timeCell = `${item.rec.time}${deviceTag}`;
+          let statusHtml;
           if (diff > 0) {
             statusHtml = `<span class="badge badge-danger">${adminLang === 'ky' ? `Кечикти: ${diff} мүнөт` : `Опоздал: ${diff} мин`}</span>`;
           } else {
             statusHtml = `<span class="badge badge-success">${adminLang === 'ky' ? 'Убагында' : 'Вовремя'}</span>`;
           }
-        } else {
-          statusHtml = `<span class="badge badge-absent">${adminLang === 'ky' ? 'Келген жок' : 'Не пришёл'}</span>`;
-        }
+          tbody.innerHTML += `<tr>
+            <td>${idx++}</td>
+            <td><b>${item.fullname}</b></td>
+            <td>${item.subject}</td>
+            <td>${timeCell}</td>
+            <td>${statusHtml}</td>
+          </tr>`;
+        });
+      }
 
-        tbody.innerHTML += `<tr>
-          <td>${idx++}</td>
-          <td><b>${item.fullname}</b></td>
-          <td>${item.subject}</td>
-          <td>${timeCell}</td>
-          <td>${statusHtml}</td>
-        </tr>`;
-      });
+      // --- KELMAGANLAR alohida ro'yxati ---
+      const absentTitleText = adminLang === 'ky' ? '❌ Келбегендер' : '❌ Отсутствуют';
+      document.getElementById('absent-section-title').innerText = `${absentTitleText} (${absentList.length})`;
+
+      const absentContainer = document.getElementById('absent-list');
+      absentContainer.innerHTML = '';
+
+      if (rosterList.length === 0) {
+        absentContainer.innerHTML = '';
+      } else if (absentList.length === 0) {
+        absentContainer.innerHTML = `<div class="all-present-msg">${adminLang === 'ky' ? '🎉 Баары келди!' : '🎉 Все пришли!'}</div>`;
+      } else {
+        absentList.forEach((item, i) => {
+          absentContainer.innerHTML += `<div class="absent-row">
+            <span class="absent-num">${i + 1}.</span>
+            <span><b>${item.fullname}</b> — ${item.subject}</span>
+          </div>`;
+        });
+      }
     }
 
     // --- OYLIK HISOBOT ---

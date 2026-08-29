@@ -81,6 +81,24 @@
     const MAX_DISTANCE_METERS = 100;
 
     let currentLang = 'ky';
+    let rosterFullnames = [];
+    let rosterLoaded = false;
+
+    // Faqat ro'yxatdagi (roster'dagi) o'qituvchilar ro'yxatdan o'ta olishi uchun
+    // admin panelida kiritilgan mugalimlar ro'yxatini yuklab olamiz
+    function loadRosterForCheck() {
+      if (db) {
+        db.ref('teachers_roster').on('value', (snapshot) => {
+          const data = snapshot.val() || {};
+          rosterFullnames = Object.values(data).map(t => (t.fullname || '').trim().toLowerCase());
+          rosterLoaded = true;
+        });
+      } else {
+        const roster = JSON.parse(localStorage.getItem('teachers_roster') || '[]');
+        rosterFullnames = roster.map(t => (t.fullname || '').trim().toLowerCase());
+        rosterLoaded = true;
+      }
+    }
 
     // Ikki koordinata orasidagi masofani (metrda) hisoblash (Haversine formula)
     function getDistanceMeters(lat1, lon1, lat2, lon2) {
@@ -144,6 +162,7 @@
       if (isDeviceLockedToday()) {
         showDeviceLockedScreen();
       }
+      loadRosterForCheck();
     });
 
     function handleFormSubmit(e) {
@@ -157,6 +176,22 @@
 
       const fullname = document.getElementById('fullname').value.trim();
       const subject = document.getElementById('subject').value.trim();
+
+      // Ro'yxat hali yuklanmagan bo'lsa, biroz kutishni so'raymiz (noto'g'ri bloklashning oldini olish uchun)
+      if (!rosterLoaded) {
+        alert(currentLang === 'ky'
+          ? "Мугалимдер тизмеси жүктөлүүдө. Бир аз күтүп, кайра аракет кылыңыз."
+          : "Список учителей загружается. Подождите немного и попробуйте снова.");
+        return;
+      }
+
+      // Faqat admin tomonidan ro'yxatga kiritilgan o'qituvchilargina ro'yxatdan o'ta oladi
+      if (rosterFullnames.length > 0 && !rosterFullnames.includes(fullname.toLowerCase())) {
+        alert(currentLang === 'ky'
+          ? "Сиз мугалим эмессиз! Каттоо үчүн атыңыз мугалимдер тизмесинде болушу керек. Эгер ката болсо, мектеп администрациясына кайрылыңыз."
+          : "Вы не учитель! Для регистрации ваше имя должно быть в списке учителей. Если это ошибка, обратитесь к администрации школы.");
+        return;
+      }
 
       const btn = document.getElementById('btn-send');
       btn.disabled = true;

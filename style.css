@@ -291,6 +291,31 @@ body {
 }
 
 .badge-absent { background-color: #feb2b2; color: #822737; }
+.badge-warning { background-color: #feebc8; color: #9c4221; }
+
+/* Top-3 eng erta kelgan mugalimlar */
+.top3-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(90deg, #fffaf0, #fff);
+  border: 1px solid #f6e05e;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.top3-medal {
+  font-size: 20px;
+  min-width: 28px;
+}
+
+.top3-time {
+  margin-left: auto;
+  font-weight: 700;
+  color: #b7791f;
+}
 
 /* O'qituvchilar ro'yxati (roster) */
 .roster-item {

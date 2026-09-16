@@ -28,7 +28,7 @@
     <header class="admin-header">
       <div>
         <h1 id="admin-title">Мугалимдердин келинүү графиги</h1>
-        <p id="admin-subtitle">Сабактын башталышы: 09:00. Кечигүүлөр (1 мүнөттөн баштап) автоматтык түрдө эсептелет.</p>
+        <p id="admin-subtitle">Физзарядка: 07:45. Дарс: 08:00. Ушул убакыттардан кечиккендер автоматтык түрдө эсептелет.</p>
       </div>
     </header>
 
@@ -53,6 +53,11 @@
         </div>
 
         <button class="btn-whatsapp" id="btn-send-whatsapp" onclick="sendDailyReportToWhatsApp()">📤 Отчётту WhatsApp'ка жиберүү</button>
+
+        <div id="top3-section" style="margin-bottom:20px; display:none;">
+          <h3 id="top3-title" style="color:#b7791f; font-size:16px; margin-bottom:10px;">🏆 Эң эрте келген мугалимдер</h3>
+          <div id="top3-list"></div>
+        </div>
 
         <div class="table-responsive">
           <table class="weekly-table">
@@ -151,6 +156,39 @@
       return new Date(0);
     }
 
+    // === Ikki bosqichli kechikish: Fizzaryadka 07:45, Dars 08:00 ===
+    const TARGET_FIZZ = 7 * 60 + 45; // 07:45
+    const TARGET_DARS = 8 * 60;      // 08:00
+
+    function getLatenessInfo(rec) {
+      const actual = rec.hours * 60 + rec.minutes;
+      if (actual <= TARGET_FIZZ) {
+        return { type: 'ontime' };
+      } else if (actual <= TARGET_DARS) {
+        return { type: 'late_fizz', diffFizz: actual - TARGET_FIZZ };
+      } else {
+        return { type: 'late_both', diffFizz: actual - TARGET_FIZZ, diffDars: actual - TARGET_DARS };
+      }
+    }
+
+    function latenessLabel(info, lang) {
+      if (info.type === 'ontime') {
+        return lang === 'ky' ? 'Убагында' : 'Вовремя';
+      } else if (info.type === 'late_fizz') {
+        return lang === 'ky' ? `Физзарядкага кечикти (${info.diffFizz} мүн)` : `Опоздал на зарядку (${info.diffFizz} мин)`;
+      } else {
+        return lang === 'ky'
+          ? `Дарска да, физзарядкага да кечикти (Физ: ${info.diffFizz} мүн, Дарс: ${info.diffDars} мүн)`
+          : `Опоздал и на зарядку, и на урок (Заряд: ${info.diffFizz} мин, Урок: ${info.diffDars} мин)`;
+      }
+    }
+
+    function latenessBadgeClass(info) {
+      if (info.type === 'ontime') return 'badge-success';
+      if (info.type === 'late_fizz') return 'badge-warning';
+      return 'badge-danger';
+    }
+
     // --- Rejim almashtirish (Kunlik / Oylik / Ro'yxat) ---
     function switchView(view) {
       currentView = view;
@@ -232,18 +270,11 @@
       } else {
         let idx = 1;
         presentList.forEach(item => {
-          const targetTime = 9 * 60; // 09:00
-          const actualTime = item.rec.hours * 60 + item.rec.minutes;
-          const diff = actualTime - targetTime;
+          const info = getLatenessInfo(item.rec);
           const distanceInfo = (typeof item.rec.distanceMeters === 'number') ? `, ${item.rec.distanceMeters}м` : '';
           const deviceTag = item.rec.device ? ` <span style="opacity:0.6;font-size:0.75em;">(${item.rec.device}${distanceInfo})</span>` : '';
           const timeCell = `${item.rec.time}${deviceTag}`;
-          let statusHtml;
-          if (diff > 0) {
-            statusHtml = `<span class="badge badge-danger">${adminLang === 'ky' ? `Кечикти: ${diff} мүнөт` : `Опоздал: ${diff} мин`}</span>`;
-          } else {
-            statusHtml = `<span class="badge badge-success">${adminLang === 'ky' ? 'Убагында' : 'Вовремя'}</span>`;
-          }
+          const statusHtml = `<span class="badge ${latenessBadgeClass(info)}">${latenessLabel(info, adminLang)}</span>`;
           tbody.innerHTML += `<tr>
             <td>${idx++}</td>
             <td><b>${item.fullname}</b></td>
@@ -251,6 +282,25 @@
             <td>${timeCell}</td>
             <td>${statusHtml}</td>
           </tr>`;
+        });
+      }
+
+      // --- TOP-3 ENG ERTA KELGANLAR ---
+      const top3Section = document.getElementById('top3-section');
+      const top3Container = document.getElementById('top3-list');
+      const medals = ['🥇', '🥈', '🥉'];
+
+      if (presentList.length === 0) {
+        top3Section.style.display = 'none';
+      } else {
+        top3Section.style.display = 'block';
+        top3Container.innerHTML = '';
+        presentList.slice(0, 3).forEach((item, i) => {
+          top3Container.innerHTML += `<div class="top3-row">
+            <span class="top3-medal">${medals[i]}</span>
+            <span><b>${item.fullname}</b> — ${item.subject}</span>
+            <span class="top3-time">${item.rec.time}</span>
+          </div>`;
         });
       }
 
@@ -331,13 +381,13 @@
         for (let day = 1; day <= daysInMonth; day++) {
           const rec = t.days[day];
           if (rec) {
-            const targetTime = 9 * 60;
-            const actualTime = rec.hours * 60 + rec.minutes;
-            const diff = actualTime - targetTime;
-            if (diff > 0) {
-              row += `<td><span class="badge badge-danger" title="${rec.time}">+${diff}</span></td>`;
-            } else {
+            const info = getLatenessInfo(rec);
+            if (info.type === 'ontime') {
               row += `<td><span class="badge badge-success">${rec.time}</span></td>`;
+            } else if (info.type === 'late_fizz') {
+              row += `<td><span class="badge badge-warning" title="${rec.time}">+${info.diffFizz}</span></td>`;
+            } else {
+              row += `<td><span class="badge badge-danger" title="${rec.time}">+${info.diffDars}</span></td>`;
             }
           } else {
             row += `<td><span class="badge badge-empty">-</span></td>`;
@@ -516,20 +566,28 @@
         ? `📋 *Мугалимдердин катталуу отчёту*\n${weekdayNames[selectedDate.getDay()]}, ${dateLabel}\n\n`
         : `📋 *Отчёт о регистрации учителей*\n${weekdayNames[selectedDate.getDay()]}, ${dateLabel}\n\n`;
 
-      let presentCount = 0, lateCount = 0, absentCount = 0;
+      let ontimeCount = 0, lateFizzCount = 0, lateBothCount = 0, absentCount = 0;
       const absentNames = [];
-      const targetTime = 9 * 60;
+      let worstLate = null; // eng ko'p kechikkan o'qituvchi
 
       lastDailyCombinedList.forEach((item, i) => {
         if (item.rec) {
-          const actualTime = item.rec.hours * 60 + item.rec.minutes;
-          const diff = actualTime - targetTime;
-          if (diff > 0) {
-            lateCount++;
-            message += `${i + 1}. ${item.fullname} — ⏰ ${adminLang === 'ky' ? `Кечикти (${diff} мүн)` : `Опоздал (${diff} мин)`}, ${item.rec.time}\n`;
-          } else {
-            presentCount++;
+          const info = getLatenessInfo(item.rec);
+          if (info.type === 'ontime') {
+            ontimeCount++;
             message += `${i + 1}. ${item.fullname} — ✅ ${adminLang === 'ky' ? 'Убагында' : 'Вовремя'} (${item.rec.time})\n`;
+          } else if (info.type === 'late_fizz') {
+            lateFizzCount++;
+            message += `${i + 1}. ${item.fullname} — 🟡 ${latenessLabel(info, adminLang)}, ${item.rec.time}\n`;
+            if (!worstLate || info.diffFizz > worstLate.diff) {
+              worstLate = { name: item.fullname, diff: info.diffFizz, type: 'fizz' };
+            }
+          } else {
+            lateBothCount++;
+            message += `${i + 1}. ${item.fullname} — 🔴 ${latenessLabel(info, adminLang)}, ${item.rec.time}\n`;
+            if (!worstLate || info.diffDars > worstLate.diff) {
+              worstLate = { name: item.fullname, diff: info.diffDars, type: 'both' };
+            }
           }
         } else {
           absentCount++;
@@ -539,12 +597,20 @@
       });
 
       const total = lastDailyCombinedList.length;
-      const attendedCount = presentCount + lateCount;
+      const lateCount = lateFizzCount + lateBothCount;
+      const attendedCount = ontimeCount + lateCount;
       const attendancePercent = total > 0 ? Math.round((attendedCount / total) * 100) : 0;
 
       message += adminLang === 'ky'
-        ? `\n*Жыйынтык:* Убагында: ${presentCount} | Кечикти: ${lateCount} | Келген жок: ${absentCount}\n*Катышуу пайызы:* ${attendancePercent}% (${attendedCount}/${total})`
-        : `\n*Итог:* Вовремя: ${presentCount} | Опоздали: ${lateCount} | Не пришли: ${absentCount}\n*Процент посещаемости:* ${attendancePercent}% (${attendedCount}/${total})`;
+        ? `\n*Жыйынтык:* Убагында: ${ontimeCount} | Физзарядкага кечикти: ${lateFizzCount} | Дарска да кечикти: ${lateBothCount} | Келген жок: ${absentCount}\n*Катышуу пайызы:* ${attendancePercent}% (${attendedCount}/${total})`
+        : `\n*Итог:* Вовремя: ${ontimeCount} | Опоздал на зарядку: ${lateFizzCount} | Опоздал и на урок: ${lateBothCount} | Не пришли: ${absentCount}\n*Процент посещаемости:* ${attendancePercent}% (${attendedCount}/${total})`;
+
+      // --- Avtomatik tahlil (eng ko'p kechikkan) ---
+      if (worstLate) {
+        message += adminLang === 'ky'
+          ? `\n\n🤖 *Автоматтык талдоо:* Эң көп кечиккен — ${worstLate.name} (${worstLate.diff} мүнөт)`
+          : `\n\n🤖 *Автоматический анализ:* Больше всех опоздал — ${worstLate.name} (${worstLate.diff} мин)`;
+      }
 
       if (absentNames.length > 0) {
         message += adminLang === 'ky'
@@ -603,7 +669,7 @@
       if (lang === 'ky') {
         document.querySelectorAll('.lang-btn')[0].classList.add('active');
         document.getElementById('admin-title').innerText = "Мугалимдердин келинүү графиги";
-        document.getElementById('admin-subtitle').innerText = "Сабактын башталышы: 09:00. Кечигүүлөр (1 мүнөттөн баштап) автоматтык түрдө эсептелет.";
+        document.getElementById('admin-subtitle').innerText = "Физзарядка: 07:45. Дарс: 08:00. Ушул убакыттардан кечиккендер автоматтык түрдө эсептелет.";
         document.getElementById('btn-print').innerText = "Отчётту басып чыгаруу";
         document.getElementById('btn-clear').innerText = "Тазалоо";
         document.getElementById('tab-daily').innerText = "Күндөлүк отчёт";
@@ -628,7 +694,7 @@
       } else {
         document.querySelectorAll('.lang-btn')[1].classList.add('active');
         document.getElementById('admin-title').innerText = "График посещаемости учителей";
-        document.getElementById('admin-subtitle').innerText = "Начало занятий: 09:00. Опоздания (от 1 минуты) рассчитываются автоматически.";
+        document.getElementById('admin-subtitle').innerText = "Зарядка: 07:45. Урок: 08:00. Опоздания от этого времени рассчитываются автоматически.";
         document.getElementById('btn-print').innerText = "Распечатать отчёт";
         document.getElementById('btn-clear').innerText = "Очистить";
         document.getElementById('tab-daily').innerText = "Дневной отчёт";
